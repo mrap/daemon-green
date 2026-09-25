@@ -65,7 +65,10 @@ pub fn launchd_plist(spec: &ServiceSpec) -> String {
         s.push_str(&format!("    <key>StandardOutPath</key>\n    <string>{p}</string>\n"));
         s.push_str(&format!("    <key>StandardErrorPath</key>\n    <string>{p}</string>\n"));
     }
-    s.push_str("    <key>ProcessType</key>\n    <string>Background</string>\n");
+    s.push_str(&format!(
+        "    <key>ProcessType</key>\n    <string>{}</string>\n",
+        spec.process_type.as_str()
+    ));
     // NOTE: intentionally NO <key>SessionCreate</key>.
     s.push_str("</dict>\n</plist>\n");
     s
@@ -163,5 +166,26 @@ mod tests {
         assert!(!systemd_unit(&s).contains("Restart=always"));
         let p = launchd_plist(&s);
         assert!(!p.contains("KeepAlive"));
+    }
+
+    #[test]
+    fn default_process_type_is_background() {
+        let p = launchd_plist(&spec());
+        assert!(
+            p.contains("<key>ProcessType</key>\n    <string>Background</string>"),
+            "default ProcessType must render as Background for backward compat; got:\n{p}"
+        );
+    }
+
+    #[test]
+    fn process_type_standard_renders_standard() {
+        use crate::ProcessType;
+        let s = spec().process_type(ProcessType::Standard);
+        let p = launchd_plist(&s);
+        assert!(
+            p.contains("<key>ProcessType</key>\n    <string>Standard</string>"),
+            "ProcessType::Standard must render as Standard; got:\n{p}"
+        );
+        assert!(!p.contains("<string>Background</string>"), "must not also render Background; got:\n{p}");
     }
 }

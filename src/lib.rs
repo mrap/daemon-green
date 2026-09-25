@@ -94,6 +94,41 @@ pub struct ServiceSpec {
     /// Where stdout+stderr go. If unset, a sensible per-user default is chosen
     /// (`~/Library/Logs/<label>.log` on macOS; the journal on Linux).
     pub log_path: Option<PathBuf>,
+    /// launchd `ProcessType` scheduling class (macOS only; no-op on the
+    /// systemd backend, which has no equivalent knob). Defaults to
+    /// `Background`, which keeps existing callers unchanged but runs the
+    /// process at reduced CPU/IO scheduling priority — a bad default for a
+    /// service whose work is user-visible or latency-sensitive.
+    pub process_type: ProcessType,
+}
+
+/// launchd `ProcessType` values. See `launchd.plist(5)`. Only meaningful on
+/// macOS; the systemd renderer ignores it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProcessType {
+    /// Scheduled at reduced priority for CPU and I/O. launchd's default when
+    /// the key is omitted, and this crate's default for backward
+    /// compatibility with specs built before this field existed.
+    #[default]
+    Background,
+    /// Normal scheduling priority — not throttled, not boosted.
+    Standard,
+    /// launchd adapts priority based on app state (foreground/background).
+    Adaptive,
+    /// Highest priority; for processes the user is actively interacting with.
+    Interactive,
+}
+
+impl ProcessType {
+    /// The exact string launchd expects in the plist `<string>` value.
+    fn as_str(self) -> &'static str {
+        match self {
+            ProcessType::Background => "Background",
+            ProcessType::Standard => "Standard",
+            ProcessType::Adaptive => "Adaptive",
+            ProcessType::Interactive => "Interactive",
+        }
+    }
 }
 
 impl ServiceSpec {
@@ -108,6 +143,7 @@ impl ServiceSpec {
             keep_alive: true,
             run_at_load: true,
             log_path: None,
+            process_type: ProcessType::default(),
         }
     }
     /// The service label.
@@ -151,6 +187,12 @@ impl ServiceSpec {
     /// Override the combined stdout/stderr log path.
     pub fn log_path(mut self, p: impl Into<PathBuf>) -> Self {
         self.log_path = Some(p.into());
+        self
+    }
+    /// Set the launchd scheduling class (default `Background`). No effect on
+    /// the systemd backend.
+    pub fn process_type(mut self, v: ProcessType) -> Self {
+        self.process_type = v;
         self
     }
 }
