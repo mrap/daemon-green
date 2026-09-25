@@ -251,6 +251,9 @@ mod tests {
             p.contains("<key>ProcessType</key>\n    <string>Standard</string>"),
             "ProcessType::Standard must render as Standard; got:\n{p}"
         );
-        assert!(!p.contains("<string>Background</string>"), "must not also render Background; got:\n{p}");
+        assert!(
+            !p.contains("<string>Background</string>"),
+            "must not also render Background; got:\n{p}"
+        );
     }
 }
