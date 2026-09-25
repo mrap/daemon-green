@@ -51,7 +51,10 @@ fn systemctl(args: &[&str]) -> Command {
     let bus = std::env::var("DBUS_SESSION_BUS_ADDRESS")
         .unwrap_or_else(|_| format!("unix:path={xdg}/bus"));
     let mut c = Command::new("systemctl");
-    c.arg("--user").args(args).env("XDG_RUNTIME_DIR", xdg).env("DBUS_SESSION_BUS_ADDRESS", bus);
+    c.arg("--user")
+        .args(args)
+        .env("XDG_RUNTIME_DIR", xdg)
+        .env("DBUS_SESSION_BUS_ADDRESS", bus);
     c
 }
 
@@ -62,7 +65,11 @@ fn run(mut cmd: Command, ctx: &str) -> Result<std::process::Output> {
         .output()
         .map_err(|e| Error::Command(format!("{ctx}: spawn failed: {e}")))?;
     if !out.status.success() {
-        let code = out.status.code().map(|c| c.to_string()).unwrap_or_else(|| "signal".into());
+        let code = out
+            .status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "signal".into());
         let tail = String::from_utf8_lossy(&out.stderr);
         let tail = tail.trim();
         let tail = if tail.is_empty() {
@@ -84,7 +91,8 @@ impl SystemdUser {
         } else {
             Err(Error::Unsupported(
                 "daemon-green: systemd not detected (/run/systemd/system missing) — \
-                 user-service management unsupported on this host".into(),
+                 user-service management unsupported on this host"
+                    .into(),
             ))
         }
     }
@@ -95,7 +103,10 @@ impl ServiceManager for SystemdUser {
         Self::ensure_systemd()?;
         std::fs::create_dir_all(unit_dir())?;
         std::fs::write(unit_path(&spec.label), systemd_unit(spec))?;
-        run(systemctl(&["daemon-reload"]), "systemctl --user daemon-reload")?;
+        run(
+            systemctl(&["daemon-reload"]),
+            "systemctl --user daemon-reload",
+        )?;
         // Keep the user manager alive across logout + start at boot. Best-effort:
         // self-linger is allowed without sudo on most distros; if it fails (some
         // hardened setups), the service still works while logged in.
@@ -107,13 +118,19 @@ impl ServiceManager for SystemdUser {
 
     fn start(&self, label: &str) -> Result<()> {
         Self::ensure_systemd()?;
-        run(systemctl(&["enable", "--now", &svc(label)]), "systemctl --user enable --now")?;
+        run(
+            systemctl(&["enable", "--now", &svc(label)]),
+            "systemctl --user enable --now",
+        )?;
         Ok(())
     }
 
     fn stop(&self, label: &str) -> Result<()> {
         Self::ensure_systemd()?;
-        run(systemctl(&["disable", "--now", &svc(label)]), "systemctl --user disable --now")?;
+        run(
+            systemctl(&["disable", "--now", &svc(label)]),
+            "systemctl --user disable --now",
+        )?;
         Ok(())
     }
 
@@ -121,7 +138,10 @@ impl ServiceManager for SystemdUser {
         Self::ensure_systemd()?;
         // Clear any start-limit failure first, else restart is refused.
         let _ = run(systemctl(&["reset-failed", &svc(label)]), "reset-failed");
-        run(systemctl(&["restart", &svc(label)]), "systemctl --user restart")?;
+        run(
+            systemctl(&["restart", &svc(label)]),
+            "systemctl --user restart",
+        )?;
         Ok(())
     }
 

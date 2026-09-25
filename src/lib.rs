@@ -31,9 +31,9 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 
-mod render; // pure renderers — always compiled + tested
 #[cfg(target_os = "macos")]
 mod launchd;
+mod render; // pure renderers — always compiled + tested
 #[cfg(target_os = "linux")]
 mod systemd;
 
@@ -100,6 +100,9 @@ pub struct ServiceSpec {
     /// process at reduced CPU/IO scheduling priority — a bad default for a
     /// service whose work is user-visible or latency-sensitive.
     pub process_type: ProcessType,
+    /// Bundle identifiers responsible for a macOS LaunchAgent's local-network
+    /// identity. Empty by default and ignored by the Linux renderer.
+    pub associated_bundle_identifiers: Vec<String>,
 }
 
 /// launchd `ProcessType` values. See `launchd.plist(5)`. Only meaningful on
@@ -144,6 +147,7 @@ impl ServiceSpec {
             run_at_load: true,
             log_path: None,
             process_type: ProcessType::default(),
+            associated_bundle_identifiers: Vec::new(),
         }
     }
     /// The service label.
@@ -193,6 +197,15 @@ impl ServiceSpec {
     /// the systemd backend.
     pub fn process_type(mut self, v: ProcessType) -> Self {
         self.process_type = v;
+        self
+    }
+    /// Set the macOS LaunchAgent's responsible bundle identifiers.
+    pub fn associated_bundle_identifiers<I, S>(mut self, ids: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.associated_bundle_identifiers = ids.into_iter().map(Into::into).collect();
         self
     }
 }
@@ -253,21 +266,33 @@ struct Unsupported;
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 impl ServiceManager for Unsupported {
     fn install(&self, _: &ServiceSpec) -> Result<()> {
-        Err(Error::Unsupported("daemon-green: unsupported platform".into()))
+        Err(Error::Unsupported(
+            "daemon-green: unsupported platform".into(),
+        ))
     }
     fn start(&self, _: &str) -> Result<()> {
-        Err(Error::Unsupported("daemon-green: unsupported platform".into()))
+        Err(Error::Unsupported(
+            "daemon-green: unsupported platform".into(),
+        ))
     }
     fn stop(&self, _: &str) -> Result<()> {
-        Err(Error::Unsupported("daemon-green: unsupported platform".into()))
+        Err(Error::Unsupported(
+            "daemon-green: unsupported platform".into(),
+        ))
     }
     fn restart(&self, _: &str) -> Result<()> {
-        Err(Error::Unsupported("daemon-green: unsupported platform".into()))
+        Err(Error::Unsupported(
+            "daemon-green: unsupported platform".into(),
+        ))
     }
     fn status(&self, _: &str) -> Result<ServiceStatus> {
-        Err(Error::Unsupported("daemon-green: unsupported platform".into()))
+        Err(Error::Unsupported(
+            "daemon-green: unsupported platform".into(),
+        ))
     }
     fn logs(&self, _: &str, _: usize) -> Result<String> {
-        Err(Error::Unsupported("daemon-green: unsupported platform".into()))
+        Err(Error::Unsupported(
+            "daemon-green: unsupported platform".into(),
+        ))
     }
 }

@@ -4,6 +4,7 @@
 use crate::ServiceSpec;
 
 /// XML-escape a string for inclusion in a plist `<string>` value.
+#[cfg(any(test, target_os = "macos"))]
 fn xml(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -17,19 +18,34 @@ fn xml(s: &str) -> String {
 ///   BLOCKS the login keychain (verified rc=36). A plain gui/<uid> agent inherits it.
 /// - The program is `ProgramArguments[0]` **directly** (absolute path), never a
 ///   `bash -c` wrapper, to keep the keychain-ACL identity clean.
+#[cfg(any(test, target_os = "macos"))]
 pub fn launchd_plist(spec: &ServiceSpec) -> String {
     let mut s = String::new();
     s.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     s.push_str("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n");
     s.push_str("<plist version=\"1.0\">\n<dict>\n");
-    s.push_str(&format!("    <key>Label</key>\n    <string>{}</string>\n", xml(&spec.label)));
+    s.push_str(&format!(
+        "    <key>Label</key>\n    <string>{}</string>\n",
+        xml(&spec.label)
+    ));
 
     s.push_str("    <key>ProgramArguments</key>\n    <array>\n");
-    s.push_str(&format!("        <string>{}</string>\n", xml(&spec.program.to_string_lossy())));
+    s.push_str(&format!(
+        "        <string>{}</string>\n",
+        xml(&spec.program.to_string_lossy())
+    ));
     for a in &spec.args {
         s.push_str(&format!("        <string>{}</string>\n", xml(a)));
     }
     s.push_str("    </array>\n");
+
+    if !spec.associated_bundle_identifiers.is_empty() {
+        s.push_str("    <key>AssociatedBundleIdentifiers</key>\n    <array>\n");
+        for identifier in &spec.associated_bundle_identifiers {
+            s.push_str(&format!("        <string>{}</string>\n", xml(identifier)));
+        }
+        s.push_str("    </array>\n");
+    }
 
     if let Some(wd) = &spec.working_dir {
         s.push_str(&format!(
@@ -62,8 +78,12 @@ pub fn launchd_plist(spec: &ServiceSpec) -> String {
 
     if let Some(lp) = &spec.log_path {
         let p = xml(&lp.to_string_lossy());
-        s.push_str(&format!("    <key>StandardOutPath</key>\n    <string>{p}</string>\n"));
-        s.push_str(&format!("    <key>StandardErrorPath</key>\n    <string>{p}</string>\n"));
+        s.push_str(&format!(
+            "    <key>StandardOutPath</key>\n    <string>{p}</string>\n"
+        ));
+        s.push_str(&format!(
+            "    <key>StandardErrorPath</key>\n    <string>{p}</string>\n"
+        ));
     }
     s.push_str(&format!(
         "    <key>ProcessType</key>\n    <string>{}</string>\n",
@@ -75,6 +95,7 @@ pub fn launchd_plist(spec: &ServiceSpec) -> String {
 }
 
 /// Render the Linux `systemd --user` `.service` unit.
+#[cfg(any(test, target_os = "linux"))]
 pub fn systemd_unit(spec: &ServiceSpec) -> String {
     let mut exec = spec.program.to_string_lossy().to_string();
     for a in &spec.args {
@@ -106,7 +127,9 @@ pub fn systemd_unit(spec: &ServiceSpec) -> String {
     }
     if let Some(lp) = &spec.log_path {
         let p = lp.to_string_lossy();
-        s.push_str(&format!("StandardOutput=append:{p}\nStandardError=append:{p}\n"));
+        s.push_str(&format!(
+            "StandardOutput=append:{p}\nStandardError=append:{p}\n"
+        ));
     }
     s.push('\n');
 
@@ -132,8 +155,14 @@ mod tests {
     #[test]
     fn launchd_has_no_sessioncreate_and_direct_program() {
         let p = launchd_plist(&spec());
-        assert!(!p.contains("SessionCreate"), "plist MUST NOT contain SessionCreate; got:\n{p}");
-        assert!(p.contains("<string>/usr/local/bin/exampled</string>"), "direct program; got:\n{p}");
+        assert!(
+            !p.contains("SessionCreate"),
+            "plist MUST NOT contain SessionCreate; got:\n{p}"
+        );
+        assert!(
+            p.contains("<string>/usr/local/bin/exampled</string>"),
+            "direct program; got:\n{p}"
+        );
         assert!(!p.contains("bash"), "no bash wrapper; got:\n{p}");
         assert!(p.contains("<key>Label</key>"));
         assert!(p.contains("<string>com.example.daemon</string>"));
@@ -147,13 +176,49 @@ mod tests {
     fn launchd_escapes_xml_in_values() {
         let s = ServiceSpec::new("com.x", "/bin/x").env("Q", "a&b<c>");
         let p = launchd_plist(&s);
-        assert!(p.contains("a&amp;b&lt;c&gt;"), "values must be XML-escaped; got:\n{p}");
+        assert!(
+            p.contains("a&amp;b&lt;c&gt;"),
+            "values must be XML-escaped; got:\n{p}"
+        );
+    }
+
+    #[test]
+    fn launchd_omits_empty_associated_bundle_identifiers() {
+        let p = launchd_plist(&spec());
+        assert!(
+            !p.contains("AssociatedBundleIdentifiers"),
+            "empty association must be omitted; got:\n{p}"
+        );
+    }
+
+    #[test]
+    fn launchd_renders_escaped_associated_bundle_identifiers() {
+        let s = spec().associated_bundle_identifiers(["com.example.owner", "com.x&<>"]);
+        let p = launchd_plist(&s);
+        let expected = "    <key>AssociatedBundleIdentifiers</key>\n    <array>\n        <string>com.example.owner</string>\n        <string>com.x&amp;&lt;&gt;</string>\n    </array>\n";
+        assert!(
+            p.contains(expected),
+            "association must render as an escaped array; got:\n{p}"
+        );
+    }
+
+    #[test]
+    fn systemd_ignores_associated_bundle_identifiers() {
+        let base = systemd_unit(&spec());
+        let associated = systemd_unit(&spec().associated_bundle_identifiers(["com.example.owner"]));
+        assert_eq!(
+            base, associated,
+            "Linux output must not contain macOS-only fields"
+        );
     }
 
     #[test]
     fn systemd_has_execstart_restart_and_wantedby() {
         let u = systemd_unit(&spec());
-        assert!(u.contains("ExecStart=/usr/local/bin/exampled serve"), "got:\n{u}");
+        assert!(
+            u.contains("ExecStart=/usr/local/bin/exampled serve"),
+            "got:\n{u}"
+        );
         assert!(u.contains("Restart=always"), "got:\n{u}");
         assert!(u.contains("WantedBy=default.target"), "got:\n{u}");
         assert!(u.contains("Environment=EX_DIR=/home/x"), "got:\n{u}");

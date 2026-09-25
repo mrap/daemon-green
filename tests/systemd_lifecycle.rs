@@ -38,10 +38,8 @@ fn systemd_user_full_lifecycle() {
     let _ = std::fs::remove_file(marker);
 
     // A service that proves it ran (writes a marker) then stays up.
-    let spec = ServiceSpec::new(label, "/bin/sh").args([
-        "-c",
-        "echo DG_RAN > /tmp/dg-e2e-marker; exec sleep 3600",
-    ]);
+    let spec = ServiceSpec::new(label, "/bin/sh")
+        .args(["-c", "echo DG_RAN > /tmp/dg-e2e-marker; exec sleep 3600"]);
 
     // install + start
     mgr.install(&spec).expect("install");
@@ -49,15 +47,24 @@ fn systemd_user_full_lifecycle() {
 
     // becomes Running, with a pid
     let st = wait_status(&*mgr, label, |s| matches!(s, ServiceStatus::Running { .. }));
-    assert!(matches!(st, ServiceStatus::Running { pid: Some(_) }), "expected Running{{pid}}, got {st:?}");
+    assert!(
+        matches!(st, ServiceStatus::Running { pid: Some(_) }),
+        "expected Running{{pid}}, got {st:?}"
+    );
 
     // it actually executed
-    assert!(Path::new(marker).exists(), "service should have written its marker");
+    assert!(
+        Path::new(marker).exists(),
+        "service should have written its marker"
+    );
 
     // restart keeps it running
     mgr.restart(label).expect("restart");
     let st = wait_status(&*mgr, label, |s| matches!(s, ServiceStatus::Running { .. }));
-    assert!(matches!(st, ServiceStatus::Running { .. }), "still Running after restart, got {st:?}");
+    assert!(
+        matches!(st, ServiceStatus::Running { .. }),
+        "still Running after restart, got {st:?}"
+    );
 
     // logs returns something (journalctl --user)
     let _ = mgr.logs(label, 20).expect("logs");

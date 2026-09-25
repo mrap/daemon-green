@@ -8,6 +8,7 @@
 //! - **retry** the bootstrap, then fall back to `launchctl asuser` (both
 //!   sudo-free);
 //! - require an active GUI login (`gui/<uid>` exists); fail LOUD otherwise.
+//!
 //! Works over SSH whenever a desktop login is active (a desktop Mac always has one).
 
 use crate::render::launchd_plist;
@@ -32,10 +33,14 @@ fn uid() -> u32 {
     unsafe { libc_getuid() }
 }
 fn home() -> PathBuf {
-    std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
+    std::env::var_os("HOME")
+        .map(PathBuf::from)
+        .unwrap_or_default()
 }
 fn plist_path(label: &str) -> PathBuf {
-    home().join("Library/LaunchAgents").join(format!("{label}.plist"))
+    home()
+        .join("Library/LaunchAgents")
+        .join(format!("{label}.plist"))
 }
 fn default_log(label: &str) -> PathBuf {
     home().join("Library/Logs").join(format!("{label}.log"))
@@ -70,7 +75,9 @@ fn bootstrap_robust(label: &str) -> Result<()> {
     let _ = launchctl(&["bootout", &target]);
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline {
-        let still = launchctl(&["print", &target]).map(|o| o.status.success()).unwrap_or(false);
+        let still = launchctl(&["print", &target])
+            .map(|o| o.status.success())
+            .unwrap_or(false);
         if !still {
             break;
         }
@@ -98,7 +105,14 @@ fn bootstrap_robust(label: &str) -> Result<()> {
 
     // 3. asuser fallback (sudo-free; bridges into the user's Aqua bootstrap).
     if let Ok(o) = Command::new("launchctl")
-        .args(["asuser", &u.to_string(), "launchctl", "bootstrap", &domain, &plist_s])
+        .args([
+            "asuser",
+            &u.to_string(),
+            "launchctl",
+            "bootstrap",
+            &domain,
+            &plist_s,
+        ])
         .output()
     {
         if o.status.success() {
@@ -184,12 +198,11 @@ impl ServiceManager for LaunchdAgent {
         }
         let text = String::from_utf8_lossy(&out.stdout);
         // `launchctl print` output is not API; parse loosely.
-        let pid = text
-            .lines()
-            .find_map(|l| {
-                let l = l.trim();
-                l.strip_prefix("pid = ").and_then(|v| v.trim().parse::<u32>().ok())
-            });
+        let pid = text.lines().find_map(|l| {
+            let l = l.trim();
+            l.strip_prefix("pid = ")
+                .and_then(|v| v.trim().parse::<u32>().ok())
+        });
         match pid {
             Some(p) => Ok(ServiceStatus::Running { pid: Some(p) }),
             None => Ok(ServiceStatus::Stopped),
